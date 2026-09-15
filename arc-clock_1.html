@@ -1,0 +1,87 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Arc Clock</title>
+<style>
+  :root{
+    --ink:#2b2a27;
+    --ink-soft:rgba(43,42,39,.7);
+    --glow:transparent;
+    color-scheme:light dark;
+  }
+  @media (prefers-color-scheme: dark){
+    :root:not([data-theme="light"]){ --ink:#e9f1f7; --ink-soft:rgba(233,241,247,.85); --glow:rgba(200,230,255,.55); }
+  }
+  :root[data-theme="dark"]{ --ink:#e9f1f7; --ink-soft:rgba(233,241,247,.85); --glow:rgba(200,230,255,.55); }
+  html,body{background:transparent !important;margin:0;}
+  .wrap{min-height:100vh;display:grid;place-items:center;padding-inline:16px;box-sizing:border-box;}
+  svg{width:min(88vw,88vh,420px);height:auto;display:block;overflow:visible;}
+  .stroke{fill:none;stroke:var(--ink);stroke-width:3;stroke-linecap:round;stroke-linejoin:round;filter:drop-shadow(0 0 3px var(--glow));}
+  .hand{stroke-width:2.6;}
+  .trail{fill:none;stroke:#ff3b30;stroke-width:2.6;stroke-linecap:round;filter:drop-shadow(0 0 3px rgba(255,59,48,.45));}
+  .dot{fill:var(--ink);filter:drop-shadow(0 0 3px var(--glow));}
+  .time{font:500 30px/1 -apple-system,BlinkMacSystemFont,'SF Pro Display','Helvetica Neue','Segoe UI',sans-serif;fill:var(--ink);text-anchor:middle;font-variant-numeric:tabular-nums;letter-spacing:.01em;}
+  .date{font:500 17px/1 -apple-system,BlinkMacSystemFont,'SF Pro Text','Helvetica Neue','Segoe UI',sans-serif;fill:var(--ink-soft);text-anchor:middle;}
+</style>
+</head>
+<body>
+
+
+<div class="wrap">
+  <svg viewBox="0 0 400 400" role="img" aria-label="Clock">
+    <circle class="stroke" cx="200" cy="200" r="120"/>
+    <path class="stroke" id="arc" d=""/>
+    <text class="time" id="time" x="200" y="252">--:--:--</text>
+    <text class="date" id="date" x="200" y="282">---</text>
+    <path class="trail" id="trail" d=""/>
+    <line class="stroke hand" id="hand" x1="200" y1="200" x2="200" y2="22"/>
+    <circle class="dot" cx="200" cy="200" r="7"/>
+  </svg>
+</div>
+
+<script>
+  const C = 200, R_IN = 120, R_OUT = 152;
+  const arcEl = document.getElementById("arc");
+  const trailEl = document.getElementById("trail");
+  const R_TIP = 178;
+  const handEl = document.getElementById("hand");
+  const timeEl = document.getElementById("time");
+  const dateEl = document.getElementById("date");
+  const pad = n => String(n).padStart(2, "0");
+  const pt = (r, deg) => { const a = deg * Math.PI / 180; return [(C + r * Math.sin(a)).toFixed(2), (C - r * Math.cos(a)).toFixed(2)]; };
+
+  // outer band = minutes elapsed in the hour, drawn clockwise from 12
+  function arcPath(deg){
+    if (deg < 0.5) return "";
+    deg = Math.min(deg, 359.9);
+    const [ix0, iy0] = pt(R_IN, 0), [ox0, oy0] = pt(R_OUT, 0);
+    const [ox1, oy1] = pt(R_OUT, deg), [ix1, iy1] = pt(R_IN, deg);
+    return "M" + ix0 + "," + iy0 + "L" + ox0 + "," + oy0 +
+           "A" + R_OUT + "," + R_OUT + " 0 " + (deg > 180 ? 1 : 0) + " 1 " + ox1 + "," + oy1 +
+           "L" + ix1 + "," + iy1;
+  }
+
+  let lastSec = -1;
+  function frame(){
+    const now = new Date();
+    const s = now.getSeconds() + now.getMilliseconds() / 1000;
+    const sDeg = s * 6;
+    handEl.setAttribute("transform", "rotate(" + sDeg.toFixed(2) + " 200 200)");   // smooth sweeping seconds
+    // red trail from 12 o'clock ("north") to the tip of the seconds hand
+    if (sDeg < 0.3) trailEl.setAttribute("d", "");
+    else { const [tx, ty] = pt(R_TIP, sDeg); trailEl.setAttribute("d", "M" + C + "," + (C - R_TIP) + "A" + R_TIP + "," + R_TIP + " 0 " + (sDeg > 180 ? 1 : 0) + " 1 " + tx + "," + ty); }
+    if (now.getSeconds() !== lastSec){
+      lastSec = now.getSeconds();
+      arcEl.setAttribute("d", arcPath((now.getMinutes() + now.getSeconds() / 60) * 6));
+      timeEl.textContent = pad(now.getHours()) + ":" + pad(now.getMinutes()) + ":" + pad(now.getSeconds());
+      dateEl.textContent = now.toLocaleDateString("en-US", { weekday:"short", month:"short", day:"numeric" }).replace(",", "");
+    }
+    requestAnimationFrame(frame);
+  }
+  frame();
+</script>
+
+</body>
+</html>
