@@ -73,17 +73,15 @@
 
   .board{margin-top:18px;display:grid;grid-template-columns:repeat(auto-fill,minmax(78px,1fr));gap:12px 4px;}
   .tile{position:relative;display:flex;flex-direction:column;align-items:center;gap:4px;padding:6px 4px;}
-  .dial{width:37px;height:37px;}
+  .dial{width:58px;height:58px;}
   .dial svg{width:100%;height:100%;display:block;overflow:visible;}
-  .bezel{fill:var(--face);stroke:var(--bezel);stroke-width:4.5;}
-  .inner-ring{fill:none;stroke:rgba(43,41,37,.18);stroke-width:.6;}
-  .tick-m{display:none;}
-  .tick-h{stroke:var(--face-ink);stroke-width:3;}
-  .numeral{display:none;font-family:Georgia,'Times New Roman',serif;font-size:12px;fill:var(--face-ink);text-anchor:middle;dominant-baseline:central;}
-  .hand-h,.hand-m{fill:var(--face-ink);}
-  .hand-s{stroke:var(--orange);stroke-width:1.8;stroke-linecap:round;}
-  .cap{fill:var(--face-ink);}
-  .cap-dot{fill:var(--orange);}
+  .ring{fill:none;stroke:var(--ink);stroke-width:2.2;}
+  .hour-track{fill:none;stroke:var(--ink);stroke-width:3.4;opacity:.1;}
+  .hour-arc{fill:none;stroke:var(--ink);stroke-width:3.4;opacity:.8;stroke-linecap:round;}
+  .band{fill:none;stroke:var(--ink);stroke-width:2;stroke-linecap:butt;stroke-linejoin:round;}
+  .hand-s{stroke:var(--ink);stroke-width:1.8;stroke-linecap:round;}
+  .trail{fill:none;stroke:var(--orange);stroke-width:2;stroke-linecap:round;}
+  .cap{fill:var(--ink);}
   .city-name{font-family:var(--font-hand);font-size:16px;font-weight:500;letter-spacing:.01em;color:var(--ink);text-align:center;line-height:1;margin-top:3px;}
   .tile.home .city-name{text-decoration:underline;text-decoration-color:var(--orange);text-decoration-thickness:2px;text-underline-offset:3px;}
   .city-time{margin-top:2px;font-family:var(--font-data);font-size:9.5px;color:var(--ink-soft);font-variant-numeric:tabular-nums;}
@@ -157,7 +155,7 @@
 
   // label: r = right, l = left, t = above, b = below
   const DEFAULTS = [
-    { name:"Sliedrecht", tz:"Europe/Amsterdam", lat:51.83, lon:4.77,   home:true, label:"l" },
+    { name:"Amsterdam",  tz:"Europe/Amsterdam", lat:52.37, lon:4.90,   home:true, label:"l" },
     { name:"Hamburg",    tz:"Europe/Berlin",    lat:53.55, lon:9.99,   label:"t" },
     { name:"Madrid",     tz:"Europe/Madrid",    lat:40.42, lon:-3.70,  label:"l" },
     { name:"Bucharest",  tz:"Europe/Bucharest", lat:44.43, lon:26.10,  label:"r" },
@@ -231,29 +229,48 @@
     '</g>';
   }
 
-  // classic watch dial, 100×100 units
-  const DIAL_STATIC = (function(){
-    let s = '<circle class="bezel" cx="50" cy="50" r="46"/><circle class="inner-ring" cx="50" cy="50" r="43"/>';
-    for (let i = 0; i < 60; i++){
-      const a = i * 6 * Math.PI / 180, major = i % 5 === 0;
-      const r1 = major ? 36 : 39.5, r2 = 42;
-      s += '<line class="'+(major?"tick-h":"tick-m")+'" x1="'+(50+r1*Math.sin(a)).toFixed(2)+'" y1="'+(50-r1*Math.cos(a)).toFixed(2)+'" x2="'+(50+r2*Math.sin(a)).toFixed(2)+'" y2="'+(50-r2*Math.cos(a)).toFixed(2)+'"/>';
-    }
-    [[12,0],[3,90],[6,180],[9,270]].forEach(function(n){
-      const a = n[1] * Math.PI / 180;
-      s += '<text class="numeral" x="'+(50+28*Math.sin(a)).toFixed(2)+'" y="'+(50-28*Math.cos(a)+0.5).toFixed(2)+'">'+n[0]+'</text>';
-    });
-    return s;
-  })();
+  // --- mini arc clock: inner ring, minutes band, sweeping seconds hand with an orange trail ---
+  const D_IN = 27, D_OUT = 36, D_TIP = 44, D_HOUR = 20;
+  const dpt = (r, deg) => { const a = deg * Math.PI/180; return [(50 + r*Math.sin(a)).toFixed(2), (50 - r*Math.cos(a)).toFixed(2)]; };
+
+  function bandPath(deg){            // outer band = minutes elapsed in the hour
+    if (deg < 0.5) return "";
+    deg = Math.min(deg, 359.5);
+    const [ix0,iy0] = dpt(D_IN,0), [ox0,oy0] = dpt(D_OUT,0), [ox1,oy1] = dpt(D_OUT,deg), [ix1,iy1] = dpt(D_IN,deg);
+    return "M"+ix0+","+iy0+"L"+ox0+","+oy0+"A"+D_OUT+","+D_OUT+" 0 "+(deg>180?1:0)+" 1 "+ox1+","+oy1+"L"+ix1+","+iy1;
+  }
+  function hourPath(deg){            // inner ring = how far this site is through its own day (0–24h)
+    if (deg < 1) return "";
+    deg = Math.min(deg, 359.5);
+    const [x0,y0] = dpt(D_HOUR,0), [x1,y1] = dpt(D_HOUR,deg);
+    return "M"+x0+","+y0+"A"+D_HOUR+","+D_HOUR+" 0 "+(deg>180?1:0)+" 1 "+x1+","+y1;
+  }
+  function trailPath(deg){           // orange trail from 12 o'clock to the tip of the seconds hand
+    if (deg < 0.5) return "";
+    deg = Math.min(deg, 359.5);
+    const [tx,ty] = dpt(D_TIP, deg);
+    return "M50,"+(50-D_TIP)+"A"+D_TIP+","+D_TIP+" 0 "+(deg>180?1:0)+" 1 "+tx+","+ty;
+  }
+
+  function sweep(){                  // smooth seconds, redrawn every frame
+    const ms = Date.now() % 60000, deg = ms / 60000 * 360;
+    boardEl.querySelectorAll('[data-hand-id$="-sec"]').forEach(function(el){ el.setAttribute("transform", "rotate("+deg.toFixed(2)+" 50 50)"); });
+    const d = trailPath(deg);
+    boardEl.querySelectorAll('[data-trail-id]').forEach(function(el){ el.setAttribute("d", d); });
+    requestAnimationFrame(sweep);
+  }
 
   function buildTile(c){
     return '<div class="tile'+(c.home?" home":"")+'">' +
       '<button class="rm" data-rm-id="'+c.id+'" title="Remove" aria-label="Remove '+esc(c.name)+'">×</button>' +
-      '<div class="dial"><svg viewBox="0 0 100 100" role="img" aria-label="'+esc(c.name)+' clock">' + DIAL_STATIC +
-        '<path class="hand-h" data-hand-id="'+c.id+'-hour" d="M47.6,56 L48.6,50 L50,27 L51.4,50 L52.4,56 Z"/>' +
-        '<path class="hand-m" data-hand-id="'+c.id+'-min" d="M48.4,57 L49.1,50 L50,13 L50.9,50 L51.6,57 Z"/>' +
-        '<line class="hand-s" data-hand-id="'+c.id+'-sec" x1="50" y1="61" x2="50" y2="11"/>' +
-        '<circle class="cap" cx="50" cy="50" r="3"/><circle class="cap-dot" cx="50" cy="50" r="1.2"/>' +
+      '<div class="dial"><svg viewBox="0 0 100 100" role="img" aria-label="'+esc(c.name)+' clock">' +
+        '<circle class="hour-track" cx="50" cy="50" r="20"/>' +
+        '<path class="hour-arc" data-hour-id="'+c.id+'" d=""/>' +
+        '<circle class="ring" cx="50" cy="50" r="27"/>' +
+        '<path class="band" data-band-id="'+c.id+'" d=""/>' +
+        '<path class="trail" data-trail-id="'+c.id+'" d=""/>' +
+        '<line class="hand-s" data-hand-id="'+c.id+'-sec" x1="50" y1="50" x2="50" y2="6"/>' +
+        '<circle class="cap" cx="50" cy="50" r="2.6"/>' +
       '</svg></div>' +
       '<div class="city-name">'+esc(c.name)+'</div>' +
       '<div class="city-time" data-time-row-id="'+c.id+'">--:--</div>' +
@@ -329,10 +346,10 @@
       const pinT = pinsLayer.querySelector('[data-time-id="'+c.id+'"]'); if (pinT) pinT.textContent = hhmm;
       const rowT = boardEl.querySelector('[data-time-row-id="'+c.id+'"]');
       if (rowT) rowT.textContent = hhmm + "  " + p.timeZoneName.replace("GMT","UTC");
-      const set = (k, deg) => { const el = boardEl.querySelector('[data-hand-id="'+c.id+'-'+k+'"]'); if (el) el.setAttribute("transform", "rotate("+deg+" 50 50)"); };
-      set("hour", (h % 12 + m/60) * 30);
-      set("min", (m + s/60) * 6);
-      set("sec", s * 6);
+      const band = boardEl.querySelector('[data-band-id="'+c.id+'"]');
+      if (band) band.setAttribute("d", bandPath((m + s/60) * 6));
+      const hourEl = boardEl.querySelector('[data-hour-id="'+c.id+'"]');
+      if (hourEl) hourEl.setAttribute("d", hourPath((h + m/60) / 24 * 360));
     });
     updateNight(now);
   }
@@ -360,6 +377,7 @@
   renderAll();
   tick();
   setInterval(tick, 1000);
+  sweep();
 </script>
 
 </body>
